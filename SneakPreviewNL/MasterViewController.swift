@@ -29,13 +29,13 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
                 alertView.show()
         })
         
-        NSNotificationCenter.defaultCenter().addObserver(self.tableView, selector: "reloadData", name: "upgradePurchaseOrRestoreSuccessful", object: nil)
+        NSNotificationCenter.defaultCenter().addObserver(self.tableView, selector: "reloadData", name: kIAPAcquiredNotification, object: nil)
         
         self.interstitial.delegate = self
         let request = GADRequest()
-        let keychainDict = Locksmith.loadDataForUserAccount("SPNL", inService: "SPNLService")
-        if let actualData = keychainDict {
-            if (actualData["upgraded"] as! String? != "YeSsSsS") {
+        let keychainData = Locksmith.loadDataForUserAccount(kIAPKeychainUserAccount, inService: kIAPKeychainService)
+        if let actualData = keychainData {
+            if (actualData[kIAPKeychainKey] as! String != kIAPKeychainValueTrue) {
                 self.interstitial.loadRequest(request)
             }
         }
@@ -88,7 +88,6 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
     
     override func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return self.dataModel[section].sneakMovies.count
-        //return 1
     }
     
     override func tableView(tableView: UITableView, heightForRowAtIndexPath indexPath: NSIndexPath) -> CGFloat {
@@ -107,7 +106,6 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
         let header: UITableViewHeaderFooterView = view as! UITableViewHeaderFooterView //recast your view as a UITableViewHeaderFooterView
         header.contentView.backgroundColor = UIColor(red: 30/255, green: 30/255, blue: 30/255, alpha: 1.0) //make the background color light blue
         header.textLabel?.textColor = UIColor.whiteColor() //make the text white
-        //header.textLabel.font = UIFont(descriptor: header.textLabel.font.fontDescriptor(), size: 52)
         header.textLabel?.textAlignment = NSTextAlignment.Center
     }
     
@@ -116,8 +114,7 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
         let sneak = self.dataModel[indexPath.section].sneakMovies[indexPath.row]
         
         var isUpgraded = false
-        
-        //OLD ---> let (keychainData, error) = Locksmith.loadDataInService("SPNLService", forUserAccount: "SPNL")
+    
         let keychainData = Locksmith.loadDataForUserAccount("SPNL", inService: "SPNLService")
         if let actualData = keychainData {
             if (actualData["upgraded"] as! String? == "YeSsSsS") {
@@ -139,13 +136,13 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
             let indicator = cell.accessoryView as! UIActivityIndicatorView
             
             if cell.backgroundView == nil {
-                var iv = UIImageView()
+                let iv = UIImageView()
                 iv.tag = 1234
                 iv.backgroundColor = UIColor.clearColor()
                 iv.opaque = false
                 iv.contentMode = UIViewContentMode.ScaleAspectFill
                 iv.clipsToBounds = true
-                var vev = UIVisualEffectView(effect: UIBlurEffect(style: UIBlurEffectStyle.Dark))
+                let vev = UIVisualEffectView(effect: UIBlurEffect(style: UIBlurEffectStyle.Dark))
                 vev.frame = CGRectMake(0, 0, cell.frame.size.width, cell.frame.size.height)
                 iv.addSubview(vev)
                 
@@ -159,8 +156,8 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
             cell.textLabel?.text = sneak.title
             
             if let posterImage = sneak.posterImage {
-                cell.imageView?.image = sneak.posterImage
-                iv.image = sneak.posterImage
+                cell.imageView?.image = posterImage
+                iv.image = posterImage
             } else {
                 cell.imageView?.image = UIImage(named: "PosterPlaceholder")
                 iv.image = nil
@@ -311,7 +308,7 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
     
     func startInfoDownloadForSneakMovie(sneakMovie: SneakMovie, indexPath: NSIndexPath) {
         
-        if let infoDownloadOperation = pendingOperations.infoDownloadsInProgress[indexPath] {
+        if let _ = pendingOperations.infoDownloadsInProgress[indexPath] {
             return
         }
         
@@ -333,7 +330,7 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
     }
     
     func startPosterDownloadForSneakMovie(sneakMovie: SneakMovie, indexPath: NSIndexPath) {
-        if let posterDownloadOperation = pendingOperations.posterDownloadsInProgress[indexPath] {
+        if let _ = pendingOperations.posterDownloadsInProgress[indexPath] {
             return
         }
         
@@ -355,7 +352,7 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
     }
     
     func startBackdropDownloadForSneakMovie(sneakMovie: SneakMovie, indexPath: NSIndexPath) {
-        if let backdropDownloadOperation = pendingOperations.backdropDownloadsInProgress[indexPath] {
+        if let _ = pendingOperations.backdropDownloadsInProgress[indexPath] {
             return
         }
         
@@ -377,7 +374,7 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
     }
     
     func startTrailerDownloadForSneakMovie(sneakMovie: SneakMovie, indexPath: NSIndexPath) {
-        if let trailerDownloadOperation = pendingOperations.trailerDownloadsInProgress[indexPath] {
+        if let _ = pendingOperations.trailerDownloadsInProgress[indexPath] {
             return
         }
         

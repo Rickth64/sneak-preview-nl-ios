@@ -61,11 +61,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                     do {
                         // The "upgraded" key already exists, update it
                         try Locksmith.updateData([kIAPKeychainKey:kIAPKeychainValueTrue], forUserAccount: kIAPKeychainUserAccount, inService: kIAPKeychainService)
-                    } catch _ {
+                    } catch {
                         print(kIAPKeychainUpdateErrorMessage)
                         return
                     }
-                } catch _ {
+                } catch {
                     print(kIAPKeychainUpdateErrorMessage)
                     return
                 }
@@ -118,15 +118,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
     
     func application(application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: NSData) {
+        
         // Add or update device info in Parse backend
         let currentInstallation = PFInstallation.currentInstallation()
         currentInstallation.setDeviceTokenFromData(deviceToken)
         currentInstallation["osVersion"] = UIDevice.currentDevice().systemVersion
         currentInstallation["deviceName"] = UIDevice.currentDevice().name
         currentInstallation["deviceModel"] = UIDevice.currentDevice().model
-        let keychainData = Locksmith.loadDataForUserAccount("SPNL", inService: "SPNLService")
+        let keychainData = Locksmith.loadDataForUserAccount(kIAPKeychainUserAccount, inService: kIAPKeychainService)
         if let actualData = keychainData {
-            currentInstallation["upgraded"] = actualData["upgraded"] as! String == "YeSsSsS"
+            currentInstallation["upgraded"] = actualData[kIAPKeychainKey] as! String == kIAPKeychainValueTrue
         }
         
         currentInstallation.saveInBackground()
