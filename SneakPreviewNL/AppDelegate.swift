@@ -7,19 +7,86 @@
 //
 
 import UIKit
+import Parse
+import ParseCrashReporting
+import Locksmith
 
 @UIApplicationMain
-class AppDelegate: UIResponder, UIApplicationDelegate, UISplitViewControllerDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
-
     func application(application: UIApplication, didFinishLaunchingWithOptions launchOptions: [NSObject: AnyObject]?) -> Bool {
-        // Override point for customization after application launch.
-        let splitViewController = self.window!.rootViewController as! UISplitViewController
-        let navigationController = splitViewController.viewControllers[splitViewController.viewControllers.count-1] as! UINavigationController
-        navigationController.topViewController!.navigationItem.leftBarButtonItem = splitViewController.displayModeButtonItem()
-        splitViewController.delegate = self
+        
+        // Set up Parse
+        ParseCrashReporting.enable()
+        Parse.setApplicationId("vuE4TYYwNBaLoSkFmJs4MiEBVRnL4uPR6cxHZdkp", clientKey: "vCooedJ2SpUoh71TS70UaPFZX6dKnkH8KiwaOxWu")
+        
+        // Track Parse Analytics
+        if application.applicationState != .Background {
+            let preBackgroundPush = !application.respondsToSelector("backgroundRefreshStatus")
+            let oldPushHandlerOnly = !self.respondsToSelector("application:didReceiveRemoteNotification:fetchCompletionHandler:")
+            var pushPayload = false
+            if let options = launchOptions {
+                pushPayload = options[UIApplicationLaunchOptionsRemoteNotificationKey] != nil
+            }
+            if (preBackgroundPush || oldPushHandlerOnly || pushPayload) {
+                PFAnalytics.trackAppOpenedWithLaunchOptions(launchOptions)
+            }
+        }
+        
+        // Register for push notifications, registering this way is available in iOS 8.0 and up
+        // The minimum deployment target guarantees this
+        let types: UIUserNotificationType = [.Alert, .Badge, .Sound]
+        let settings = UIUserNotificationSettings(forTypes: types, categories: nil)
+        application.registerUserNotificationSettings(settings)
+        application.registerForRemoteNotifications()
+        
+        // Initially set the upgrade value to false in the kaychain
+        // This should only happen on the first ever launch of the app
+        do {
+            try Locksmith.saveData([kIAPKeychainKey:kIAPKeychainValueFalse], forUserAccount: kIAPKeychainUserAccount, inService: kIAPKeychainService)
+        } catch {
+            
+        }
+        
+        // Observe the purchase/restore of the ad free upgrade
+        // Unlock the upgrade in the keychain if transaction is valid
+        PFPurchase.addObserverForProduct(kIAPProductId) { (transaction) -> Void in
+            PFPurchase.downloadAssetForTransaction(transaction, completion: { (filepath, error) -> Void in
+                do {
+                    // Try saveData, in case the initial saveData above did not work for whatever reason
+                    try Locksmith.saveData([kIAPKeychainKey:kIAPKeychainValueTrue], forUserAccount: kIAPKeychainUserAccount, inService: kIAPKeychainService)
+                } catch LocksmithError.Duplicate {
+                    do {
+                        // The "upgraded" key already exists, update it
+                        try Locksmith.updateData([kIAPKeychainKey:kIAPKeychainValueTrue], forUserAccount: kIAPKeychainUserAccount, inService: kIAPKeychainService)
+                    } catch _ {
+                        print(kIAPKeychainUpdateErrorMessage)
+                        return
+                    }
+                } catch _ {
+                    print(kIAPKeychainUpdateErrorMessage)
+                    return
+                }
+                
+                NSNotificationCenter.defaultCenter().postNotificationName(kIAPAcquiredNotification, object: nil)
+            })
+        }
+        
+        // Change global appearance of certain UI elements
+        UINavigationBar.appearance().barTintColor = UIColor.blackColor()
+        UINavigationBar.appearance().barStyle = UIBarStyle.Black
+        UIApplication.sharedApplication().setStatusBarStyle(.LightContent, animated: false)
+        
+        // Change the color of a selected UITableView cell (semi-transparent white)
+        let colorView = UIView()
+        colorView.backgroundColor = UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.2)
+        UITableViewCell.appearance().selectedBackgroundView = colorView
+        
+        //TODO: remove before distribution!
+        try! Locksmith.updateData([kIAPKeychainKey:kIAPKeychainValueFalse], forUserAccount: kIAPKeychainUserAccount, inService: kIAPKeychainService)
+        
         return true
     }
 
@@ -39,22 +106,46 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UISplitViewControllerDele
 
     func applicationDidBecomeActive(application: UIApplication) {
         // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        let currentInstallation = PFInstallation.currentInstallation()
+        if currentInstallation.badge != 0 {
+            currentInstallation.badge = 0
+            currentInstallation.saveEventually()
+        }
     }
 
     func applicationWillTerminate(application: UIApplication) {
         // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     }
-
-    // MARK: - Split view
-
-    func splitViewController(splitViewController: UISplitViewController, collapseSecondaryViewController secondaryViewController:UIViewController, ontoPrimaryViewController primaryViewController:UIViewController) -> Bool {
-        guard let secondaryAsNavController = secondaryViewController as? UINavigationController else { return false }
-        guard let topAsDetailController = secondaryAsNavController.topViewController as? DetailViewController else { return false }
-        if topAsDetailController.detailItem == nil {
-            // Return true to indicate that we have handled the collapse by doing nothing; the secondary controller will be discarded.
-            return true
+    
+    func application(application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: NSData) {
+        // Add or update device info in Parse backend
+        let currentInstallation = PFInstallation.currentInstallation()
+        currentInstallation.setDeviceTokenFromData(deviceToken)
+        currentInstallation["osVersion"] = UIDevice.currentDevice().systemVersion
+        currentInstallation["deviceName"] = UIDevice.currentDevice().name
+        currentInstallation["deviceModel"] = UIDevice.currentDevice().model
+        let keychainData = Locksmith.loadDataForUserAccount("SPNL", inService: "SPNLService")
+        if let actualData = keychainData {
+            currentInstallation["upgraded"] = actualData["upgraded"] as! String == "YeSsSsS"
         }
-        return false
+        
+        currentInstallation.saveInBackground()
+    }
+    
+    func application(application: UIApplication, didReceiveRemoteNotification userInfo: [NSObject : AnyObject]) {
+        // Handle the push notification
+        PFPush.handlePush(userInfo)
+        if application.applicationState == .Inactive {
+            PFAnalytics.trackAppOpenedWithRemoteNotificationPayload(userInfo)
+        }
+    }
+    
+    func application(application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: NSError) {
+        if error.code == 3010 {
+            print("Push notifications are not supported in the iOS Simulator.")
+        } else {
+            print("application:didFailToRegisterForRemoteNotificationsWithError: %@", error)
+        }
     }
 
 }
