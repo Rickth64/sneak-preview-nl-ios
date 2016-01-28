@@ -25,7 +25,7 @@ class SneakMovie {
     var posterImage: UIImage?
     var backdropPath: String?
     var backdropImage: UIImage?
-    var isConfirmed: Bool!
+    let isConfirmed: Bool!
     var state = SneakMovieState.New
     
     var tagline: String?

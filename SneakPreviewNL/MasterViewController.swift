@@ -12,25 +12,24 @@ import Locksmith
 
 class MasterViewController: UITableViewController, GADInterstitialDelegate {
 
-    private var dataModel: SneakDataModel!
-    private let pendingOperations = PendingOperations()
-    private let interstitial = GADInterstitial(adUnitID: "ca-app-pub-6550777095004438/4155970709")
+    /// The data model containing weeks of sneak movies
+    var dataModel: SneakDataModel?
+    
+    /// All pending TheMovieDB API call operations
+    let pendingOperations = PendingOperations()
+    
+    /// The interstitial ad view
+    let interstitial = GADInterstitial(adUnitID: "ca-app-pub-6550777095004438/4155970709")
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Do any additional setup after loading the view, typically from a nib.
         
-        self.dataModel = SneakDataModel()
+        self.reloadDataModel()
         
-        self.dataModel.getSneaksFromServerWithSuccess({ () -> Void in
-            self.tableView.reloadData()
-            }, failure: { () -> Void in
-                let alertView = UIAlertView(title: "Oeps...", message: "Er ging iets mis tijdens het ophalen van de sneaks. Probeer het later nogmaals.", delegate: nil, cancelButtonTitle: "OK")
-                alertView.show()
-        })
-        
+        // Subscribe to kIAPAcquiredNotification, forcing a reload of the table view when the in-app purchase is done (or restored)
         NSNotificationCenter.defaultCenter().addObserver(self.tableView, selector: "reloadData", name: kIAPAcquiredNotification, object: nil)
         
+        // Set up the interstitial ad view, request an ad when the in-app purchase is not unlocked
         self.interstitial.delegate = self
         let request = GADRequest()
         let keychainData = Locksmith.loadDataForUserAccount(kIAPKeychainUserAccount, inService: kIAPKeychainService)
@@ -44,7 +43,8 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
 
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
-        // Dispose of any resources that can be recreated.
+        self.dataModel = nil
+        self.tableView.reloadData()
     }
 
     // MARK: - Segues
@@ -52,9 +52,10 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
     override func prepareForSegue(segue: UIStoryboardSegue, sender: AnyObject?) {
         if let indexPath = self.tableView.indexPathForSelectedRow {
             if segue.identifier == "showDetail" {
-                let sneak: SneakMovie = self.dataModel[indexPath.section].sneakMovies[indexPath.row]
+                // Force unwrap self.dataModel, because there would be no table view cells (and thus no call to this function) without the data model
+                let sneak = self.dataModel![indexPath.section].sneakMovies[indexPath.row]
                 (segue.destinationViewController as! DetailViewController).sneakMovie = sneak
-                (segue.destinationViewController as! DetailViewController).title = "Week \(self.dataModel[indexPath.section].number), \(self.dataModel[indexPath.section].year)"
+                (segue.destinationViewController as! DetailViewController).title = "Week \(self.dataModel![indexPath.section].number), \(self.dataModel![indexPath.section].year)"
             } else if segue.identifier == "showUpgrade" {
                 self.tableView.deselectRowAtIndexPath(indexPath, animated: true)
             }
@@ -64,30 +65,30 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
     // MARK: - Table View
 
     override func numberOfSectionsInTableView(tableView: UITableView) -> Int {
-        if self.dataModel.weekCount > 0 {
+        if self.dataModel?.weekCount > 0 {
             self.tableView.backgroundView = nil
-            return self.dataModel.weekCount
+            return self.dataModel!.weekCount
         } else {
             // Display a message when the table is empty
-            
             let messageLabel = UILabel(frame: CGRectMake(0, 0, self.view.bounds.size.width, self.view.bounds.size.height))
-            
             messageLabel.text = "Er zijn momenteel geen sneaks om weer te geven. Trek omlaag om te vernieuwen."
             messageLabel.textColor = UIColor.whiteColor()
             messageLabel.numberOfLines = 0
             messageLabel.textAlignment = .Center
             messageLabel.font = UIFont.systemFontOfSize(20)
             messageLabel.sizeToFit()
-            
             self.tableView.backgroundView = messageLabel;
-            //self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
+            
+            return 0
         }
-        
-        return 0
     }
     
     override func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return self.dataModel[section].sneakMovies.count
+        if let cnt = self.dataModel?[section].sneakMovies.count {
+            return cnt
+        } else {
+            return 0
+        }
     }
     
     override func tableView(tableView: UITableView, heightForRowAtIndexPath indexPath: NSIndexPath) -> CGFloat {
@@ -95,7 +96,7 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
     }
     
     override func tableView(tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        return self.dataModel[section].description
+        return self.dataModel![section].description
     }
     
     override func tableView(tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
@@ -103,42 +104,43 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
     }
     
     override func tableView(tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
-        let header: UITableViewHeaderFooterView = view as! UITableViewHeaderFooterView //recast your view as a UITableViewHeaderFooterView
-        header.contentView.backgroundColor = UIColor(red: 30/255, green: 30/255, blue: 30/255, alpha: 1.0) //make the background color light blue
-        header.textLabel?.textColor = UIColor.whiteColor() //make the text white
+        let header: UITableViewHeaderFooterView = view as! UITableViewHeaderFooterView
+        header.contentView.backgroundColor = UIColor(red: 30/255, green: 30/255, blue: 30/255, alpha: 1.0)
+        header.textLabel?.textColor = UIColor.whiteColor()
         header.textLabel?.textAlignment = NSTextAlignment.Center
     }
     
     override func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell {
         
-        let sneak = self.dataModel[indexPath.section].sneakMovies[indexPath.row]
+        // Retrieve the sneak movie belonging to this index path
+        let sneak = self.dataModel![indexPath.section].sneakMovies[indexPath.row]
         
+        // Check if the in-app purchase is unlocked
         var isUpgraded = false
-    
-        let keychainData = Locksmith.loadDataForUserAccount("SPNL", inService: "SPNLService")
+        let keychainData = Locksmith.loadDataForUserAccount(kIAPKeychainUserAccount, inService: kIAPKeychainService)
         if let actualData = keychainData {
-            if (actualData["upgraded"] as! String? == "YeSsSsS") {
+            if (actualData[kIAPKeychainKey] as! String == kIAPKeychainValueTrue) {
                 isUpgraded = true
             }
         }
         
+        // Only show the movie when it is not/no longer rumoured, or is the in-app purchase is unlocked
         if sneak.isConfirmed! || isUpgraded {
             
             let cell = tableView.dequeueReusableCellWithIdentifier("Cell", forIndexPath: indexPath) as! SneakMovieTableViewCell
             
-            cell.textLabel?.textColor = UIColor.whiteColor()
-            cell.detailTextLabel?.textColor = UIColor.whiteColor()
-            
+            // Initially set an activity indicator as the cell's accessory view (depends on the download state of the sneak movie seen later on)
             if cell.accessoryView == nil {
                 let indicator = UIActivityIndicatorView(activityIndicatorStyle: UIActivityIndicatorViewStyle.White)
                 cell.accessoryView = indicator
             }
             let indicator = cell.accessoryView as! UIActivityIndicatorView
             
+            // Set an image view with a visual effect view as the cell's background view
             if cell.backgroundView == nil {
                 let iv = UIImageView()
-                iv.tag = 1234
-                iv.backgroundColor = UIColor.clearColor()
+                iv.tag = kViewTagCellPosterImageView
+                iv.backgroundColor = UIColor.blackColor()
                 iv.opaque = false
                 iv.contentMode = UIViewContentMode.ScaleAspectFill
                 iv.clipsToBounds = true
@@ -148,13 +150,9 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
                 
                 cell.backgroundView = iv
             }
+            let iv = cell.backgroundView?.viewWithTag(kViewTagCellPosterImageView) as! UIImageView
             
-            let iv = cell.backgroundView?.viewWithTag(1234) as! UIImageView
-            
-            cell.backgroundColor = UIColor.clearColor()
-            
-            cell.textLabel?.text = sneak.title
-            
+            // Assign the poster image of the sneak movie to both image views, otherwise use a placeholder
             if let posterImage = sneak.posterImage {
                 cell.imageView?.image = posterImage
                 iv.image = posterImage
@@ -163,6 +161,9 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
                 iv.image = nil
             }
             
+            cell.textLabel?.text = sneak.title
+            
+            // Assign the text labels' text depending on the current state, and start download operations accordingly
             switch (sneak.state) {
             case .New:
                 indicator.startAnimating()
@@ -184,7 +185,7 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
             case .TrailerDownloaded:
                 indicator.stopAnimating()
                 if sneak.isConfirmed! {
-                    cell.detailTextLabel?.text = sneak.tagline //"If you never face your enemy, how can you face yourself."
+                    cell.detailTextLabel?.text = sneak.tagline
                 } else {
                     cell.detailTextLabel?.text = "NIET BEVESTIGD"
                 }
@@ -201,12 +202,12 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
     }
     
     override func scrollViewWillBeginDragging(scrollView: UIScrollView) {
-        //1
+        // Suspend all TheMovieDB API call operations when the table view is scrolling
         suspendAllOperations()
     }
     
     override func scrollViewDidEndDragging(scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        // 2
+        // Resume all TheMovieDB API call operations when the table view is not moving any more and the finger is removed
         if !decelerate {
             loadSneaksForOnscreenCells()
             resumeAllOperations()
@@ -214,53 +215,51 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
     }
     
     override func scrollViewDidEndDecelerating(scrollView: UIScrollView) {
-        // 3
         loadSneaksForOnscreenCells()
         resumeAllOperations()
     }
     
     @IBAction func refreshControlPulled(sender: UIRefreshControl) {
-        self.dataModel.getSneaksFromServerWithSuccess({ () -> Void in
-            self.refreshControl?.endRefreshing()
-            self.tableView.reloadData()
-            }, failure: { () -> Void in
-                let alertView = UIAlertView(title: "Oeps...", message: "Er ging iets mis tijdens het ophalen van de sneaks. Probeer het later nogmaals.", delegate: nil, cancelButtonTitle: "OK")
-                alertView.show()
-        })
+        self.reloadDataModel()
     }
     
     // MARK: - TheMovieDB API call operations
     
-    func suspendAllOperations () {
+    /// Suspends all pending TheMovieDB API call operations
+    func suspendAllOperations() {
         pendingOperations.infoDownloadQueue.suspended = true
         pendingOperations.posterDownloadQueue.suspended = true
         pendingOperations.backdropDownloadQueue.suspended = true
         pendingOperations.trailerDownloadQueue.suspended = true
     }
     
-    func resumeAllOperations () {
+    /// Resumes all pending TheMovieDB API call operations
+    func resumeAllOperations() {
         pendingOperations.infoDownloadQueue.suspended = false
         pendingOperations.posterDownloadQueue.suspended = false
         pendingOperations.backdropDownloadQueue.suspended = false
         pendingOperations.trailerDownloadQueue.suspended = false
     }
-    
-    func loadSneaksForOnscreenCells () {
+
+     /// Sets the pending operations according to only the sneak movies that are visible (after a drag/scroll action)
+     func loadSneaksForOnscreenCells() {
+        // Get the NSIndexPaths for the cells visible on the screen
         if let pathsArray = tableView.indexPathsForVisibleRows {
-            //2
+            
+            // Get all current pending operations
             var allPendingOperations = Set(pendingOperations.infoDownloadsInProgress.keys)
             allPendingOperations.unionInPlace(pendingOperations.posterDownloadsInProgress.keys)
             allPendingOperations.unionInPlace(pendingOperations.backdropDownloadsInProgress.keys)
             allPendingOperations.unionInPlace(pendingOperations.trailerDownloadsInProgress.keys)
             
-            //3
+            // Determine all operations to be cancelled (for the movies that are now outside the view)
             let visiblePaths = Set(pathsArray)
             let toBeCancelled = allPendingOperations.subtract(visiblePaths)
             
-            //4
+            // Determine all operation to be started (for movies inside the view, that are not already pending)
             let toBeStarted = visiblePaths.subtract(allPendingOperations)
             
-            // 5
+            // Cancel the to be cancelled pending operations
             for indexPath in toBeCancelled {
                 if let pendingInfoDownload = pendingOperations.infoDownloadsInProgress[indexPath] {
                     pendingInfoDownload.cancel()
@@ -283,14 +282,21 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
                 pendingOperations.trailerDownloadsInProgress.removeValueForKey(indexPath)
             }
             
-            // 6
+            // Start the determined operations
             for indexPath in toBeStarted {
-                let recordToProcess = self.dataModel[indexPath.section].sneakMovies[indexPath.row]
+                let recordToProcess = self.dataModel![indexPath.section].sneakMovies[indexPath.row]
                 startOperationsForSneakMovie(recordToProcess, indexPath: indexPath)
             }
         }
     }
     
+    /**
+     Starts the proper TheMovieDB API call operation for a sneak movie, identified by a unique NSIndexPath
+     
+     - Parameter sneakMovie:    The sneak movie to retrieve specific data for
+     - Parameter indexPath:     The key that the sneak movie (or rather the operation) is identified by for managing them
+
+    */
     func startOperationsForSneakMovie(sneakMovie: SneakMovie, indexPath: NSIndexPath) {
         switch (sneakMovie.state) {
         case .New:
@@ -306,8 +312,9 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
         }
     }
     
+    /// Starts the info retrieval (title, overview, image paths, runtime, imdb id) of a sneak movie from TheMovieD
     func startInfoDownloadForSneakMovie(sneakMovie: SneakMovie, indexPath: NSIndexPath) {
-        
+        // Return if already in progress for this movie
         if let _ = pendingOperations.infoDownloadsInProgress[indexPath] {
             return
         }
@@ -325,11 +332,13 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
             })
         }
         
+        // Add the NSOperation, it starts automatically when added to the NSOperationQueue
         pendingOperations.infoDownloadsInProgress[indexPath] = infoDownloader
         pendingOperations.infoDownloadQueue.addOperation(infoDownloader)
     }
     
     func startPosterDownloadForSneakMovie(sneakMovie: SneakMovie, indexPath: NSIndexPath) {
+        // Return if already in progress for this movie
         if let _ = pendingOperations.posterDownloadsInProgress[indexPath] {
             return
         }
@@ -347,11 +356,13 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
             })
         }
         
+        // Add the NSOperation, it starts automatically when added to the NSOperationQueue
         pendingOperations.posterDownloadsInProgress[indexPath] = posterDownloader
         pendingOperations.posterDownloadQueue.addOperation(posterDownloader)
     }
     
     func startBackdropDownloadForSneakMovie(sneakMovie: SneakMovie, indexPath: NSIndexPath) {
+        // Return if already in progress for this movie
         if let _ = pendingOperations.backdropDownloadsInProgress[indexPath] {
             return
         }
@@ -369,11 +380,13 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
             })
         }
         
+        // Add the NSOperation, it starts automatically when added to the NSOperationQueue
         pendingOperations.backdropDownloadsInProgress[indexPath] = backdropDownloader
         pendingOperations.backdropDownloadQueue.addOperation(backdropDownloader)
     }
     
     func startTrailerDownloadForSneakMovie(sneakMovie: SneakMovie, indexPath: NSIndexPath) {
+        // Return if already in progress for this movie
         if let _ = pendingOperations.trailerDownloadsInProgress[indexPath] {
             return
         }
@@ -391,8 +404,21 @@ class MasterViewController: UITableViewController, GADInterstitialDelegate {
             })
         }
         
+        // Add the NSOperation, it starts automatically when added to the NSOperationQueue
         pendingOperations.trailerDownloadsInProgress[indexPath] = trailerDownloader
         pendingOperations.trailerDownloadQueue.addOperation(trailerDownloader)
+    }
+    
+    /// Reloads the data model from the server
+    func reloadDataModel() {
+        self.dataModel = SneakDataModel()
+        self.dataModel!.getSneaksFromServerWithSuccess({ () -> Void in
+            self.refreshControl?.endRefreshing()
+            self.tableView.reloadData()
+            }, failure: { () -> Void in
+                let alertView = UIAlertView(title: "Oeps...", message: "Er ging iets mis tijdens het ophalen van de sneaks. Probeer het later nogmaals.", delegate: nil, cancelButtonTitle: "OK")
+                alertView.show()
+        })
     }
     
     // MARK: - Google Ads Interstitial

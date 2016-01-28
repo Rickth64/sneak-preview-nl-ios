@@ -19,9 +19,6 @@ class DetailViewController: UIViewController, GADBannerViewDelegate {
     @IBOutlet weak var movieOverviewTextView: UITextView!
     @IBOutlet weak var backgroundImageView: UIImageView!
     
-    private let IMDB_TITLE_BASE_URL = "imdb:///title"
-    private let IMDB_TITLE_WEB_BASE_URL = "http://www.imdb.com/title"
-    
     @IBOutlet weak var bannerView: GADBannerView!
     @IBOutlet weak var bannerViewLayoutConstraint: NSLayoutConstraint!
     
@@ -77,14 +74,12 @@ class DetailViewController: UIViewController, GADBannerViewDelegate {
             self.movieTrailerButton?.enabled = false
         }
         
-        //
         self.movieBackdropImageView?.image = self.sneakMovie?.backdropImage
         self.backgroundImageView?.image = self.sneakMovie?.backdropImage
     }
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Do any additional setup after loading the view, typically from a nib.
         
         self.bannerView.adUnitID = "ca-app-pub-6550777095004438/5557468709"
         self.bannerView.rootViewController = self
@@ -121,9 +116,10 @@ class DetailViewController: UIViewController, GADBannerViewDelegate {
     override func viewDidAppear(animated: Bool) {
         super.viewDidAppear(animated)
         
-        let keychainData = Locksmith.loadDataForUserAccount("SPNL", inService: "SPNLService")
+        // Show an ad if the in-app purchase is not unlocked
+        let keychainData = Locksmith.loadDataForUserAccount(kIAPKeychainUserAccount, inService: kIAPKeychainService)
         if let actualData = keychainData {
-            if (actualData["upgraded"] as! String? != "YeSsSsS") {
+            if (actualData[kIAPKeychainKey] as! String != kIAPKeychainValueTrue) {
                 let request = GADRequest()
                 self.bannerView.loadRequest(request)
             }
@@ -132,20 +128,11 @@ class DetailViewController: UIViewController, GADBannerViewDelegate {
     
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
-        // Dispose of any resources that can be recreated.
     }
     
     func openInIMDB() {
         if let sneak = self.sneakMovie {
-            var baseURL: String
-            
-            if (UIApplication.sharedApplication().canOpenURL(NSURL(string: IMDB_TITLE_BASE_URL)!)) {
-                baseURL = IMDB_TITLE_BASE_URL
-            } else {
-                baseURL = IMDB_TITLE_WEB_BASE_URL
-            }
-            
-            UIApplication.sharedApplication().openURL(NSURL(string: "\(baseURL)/\(sneak.imdbID!)/")!)
+            UIApplication.sharedApplication().openURL(NSURL(string: "\(kIMDBTitleBaseURL)/\(sneak.imdbID!)/")!)
         }
         
         
